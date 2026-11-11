@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>リスニング実験版</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="リスニング実験">
+<style>
+body{margin:0;font:16px/1.6 -apple-system,sans-serif;background:#fff8e7;color:#222;padding:env(safe-area-inset-top) 16px 40px}
+h1{font-size:18px;margin:14px 0 4px}.tag{display:inline-block;background:#d9480f;color:#fff;border-radius:6px;padding:0 8px;font-size:12px;margin-left:6px}
+#txt{background:#fff;border-radius:12px;padding:14px;margin:12px 0;font-size:19px;min-height:5em}
+.row{display:flex;gap:8px}button{flex:1;font-size:18px;padding:16px 4px;border:0;border-radius:12px;background:#d9480f;color:#fff;font-weight:700}
+button.g{background:#fff;color:#222;border:1px solid #ccc}#no{color:#666;font-size:14px;margin:6px 0}
+select{width:100%;font-size:16px;padding:10px;border-radius:10px;margin-top:10px}
+</style></head><body>
+<h1>リスニング実験版<span class="tag">実験</span></h1>
+<div id="no">読み込み中…</div>
+<div id="txt"></div>
+<div class="row"><button class="g" id="bp">◀ 前へ</button><button id="br">もう一度</button><button class="g" id="bn">次へ ▶</button></div>
+<div class="row" style="margin-top:8px"><button id="bg" style="background:#1f6feb">▶ 再生 / 停止</button></div>
+<select id="sel"></select>
+<audio id="au" playsinline preload="auto"></audio>
+<script>
+var au=document.getElementById('au'),T=[],i=0,base='',tr=[];
+function $(x){return document.getElementById(x)}
+function setMS(){if(!('mediaSession' in navigator))return;try{navigator.mediaSession.metadata=new MediaMetadata({title:'区切り '+(i+1)+' / '+tr.length,artist:(tr[i]||{}).t?tr[i].t.slice(0,60):'',album:T.title||''});navigator.mediaSession.playbackState=au.paused?'paused':'playing'}catch(e){}}
+function show(){$('txt').textContent=tr[i].t;$('no').textContent='区切り '+(i+1)+' / '+tr.length+'　'+(T.title||'');setMS()}
+function go(n,play){i=Math.max(0,Math.min(tr.length-1,n));au.src=base+tr[i].f;show();if(play!==false){var p=au.play();p&&p.catch&&p.catch(function(){})}try{localStorage.setItem('expPos',JSON.stringify({j:$('sel').value,i:i}))}catch(e){}}
+function toggle(){if(au.paused){if(!au.src)go(i);else{var p=au.play();p&&p.catch&&p.catch(function(){})}}else au.pause()}
+$('bp').onclick=function(){go(i-1)};$('bn').onclick=function(){go(i+1)};$('br').onclick=function(){go(i)};$('bg').onclick=toggle;
+au.addEventListener('ended',function(){if(i<tr.length-1)go(i+1)});
+['play','pause','playing','loadedmetadata'].forEach(function(n){au.addEventListener(n,function(){setMS();reg()})});
+function reg(){if(!('mediaSession' in navigator))return;var H={play:toggle,pause:function(){au.pause()},nexttrack:function(){go(i+1)},previoustrack:function(){go(i-1)}};Object.keys(H).forEach(function(k){try{navigator.mediaSession.setActionHandler(k,H[k])}catch(e){}})}
+reg();
+fetch('list.json').then(function(r){return r.json()}).then(function(L){
+  L.forEach(function(x){var o=document.createElement('option');o.value=x.json;o.textContent=x.title;$('sel').appendChild(o)});
+  function load(j){base='';return fetch(j).then(function(r){return r.json()}).then(function(d){T=d;tr=d.tracks;i=0;show()})}
+  $('sel').onchange=function(){au.pause();au.removeAttribute('src');load(this.value)};
+  var st=null;try{st=JSON.parse(localStorage.getItem('expPos')||'null')}catch(e){}
+  var j0=L[0].json;if(st&&L.some(function(x){return x.json===st.j}))j0=st.j;
+  $('sel').value=j0;load(j0).then(function(){if(st&&st.j===j0&&st.i<tr.length){i=st.i;show()}});
+}).catch(function(e){$('no').textContent='読み込み失敗：'+e});
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+</script></body></html>
