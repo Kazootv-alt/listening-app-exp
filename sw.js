@@ -1,4 +1,4 @@
-const C='exp-shell-2';
+const C='exp-shell-3';
 self.addEventListener('install',e=>{self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil((async()=>{for(const k of await caches.keys())if(k.startsWith('exp-')&&k!==C)await caches.delete(k);await self.clients.claim()})())});
 /* 音声（mp3）と途中取得（Range）は触らない：Safariの音声再生は部分取得が前提で、ここで横取りすると再生が止まることがあるため。

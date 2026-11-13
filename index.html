@@ -23,7 +23,7 @@ select{width:100%;font-size:16px;padding:10px;border-radius:10px;margin-top:10px
    画面オフ中に音声ファイルを差し替えずに済むので、iPhoneで次の区切りへ止まらず進みやすい（旧方式：区切りごとのファイル切替は、全体ファイルが無い英文だけで使う） */
 var au=document.getElementById('au'),T=[],i=0,tr=[],ONE=false;
 function $(x){return document.getElementById(x)}
-function setMS(){if(!('mediaSession' in navigator))return;try{navigator.mediaSession.metadata=new MediaMetadata({title:'区切り '+(i+1)+' / '+tr.length,artist:(tr[i]||{}).t?tr[i].t.slice(0,60):'',album:T.title||''});navigator.mediaSession.playbackState=au.paused?'paused':'playing'}catch(e){}}
+function setMS(){if(!('mediaSession' in navigator))return;try{navigator.mediaSession.metadata=new MediaMetadata({title:'区切り '+(i+1)+' / '+tr.length,artist:(tr[i]||{}).t?tr[i].t.slice(0,60):'',album:T.title||''})}catch(e){}} /* 再生状態はiPhone側に任せる（手で設定すると、画面オフ中のイヤホン操作で表示と実際の音がずれることがある） */
 function show(){$('txt').textContent=tr[i].t;$('no').textContent='区切り '+(i+1)+' / '+tr.length+'　'+(T.title||'');setMS()}
 function save(){try{localStorage.setItem('expPos',JSON.stringify({j:$('sel').value,i:i}))}catch(e){}}
 function play(){var p=au.play();p&&p.catch&&p.catch(function(){})}
@@ -36,8 +36,11 @@ function toggle(){if(au.paused){if(!au.src)go(i);else play()}else au.pause()}
 $('bp').onclick=function(){go(i-1)};$('bn').onclick=function(){go(i+1)};$('br').onclick=function(){go(i)};$('bg').onclick=toggle;
 au.addEventListener('ended',function(){if(!ONE&&i<tr.length-1)go(i+1)});
 au.addEventListener('timeupdate',function(){if(!ONE)return;var k=at(au.currentTime);if(k!==i){i=k;show();save()}});
-['play','pause','playing','loadedmetadata'].forEach(function(n){au.addEventListener(n,function(){setMS();reg()})});
-function reg(){if(!('mediaSession' in navigator))return;var H={play:function(){if(au.paused)toggle()},pause:function(){au.pause()},nexttrack:function(){go(i+1)},previoustrack:function(){go(i-1)}};Object.keys(H).forEach(function(k){try{navigator.mediaSession.setActionHandler(k,H[k])}catch(e){}})}
+au.addEventListener('loadedmetadata',setMS);
+/* イヤホン：1回タップ＝再生／停止、2回＝次へ、3回＝前へ（iPhoneが決める割り当て。音量はアプリでは触らない）。
+   画面オフ中は「再生位置を動かすだけ」にし、鳴っている最中に play() を重ねて呼ばない（重ねると音が出なくなる例があるため） */
+function seekTo(n){i=Math.max(0,Math.min(tr.length-1,n));if(ONE&&au.src){try{au.currentTime=tr[i].o}catch(e){}show();save();if(au.paused)play()}else go(i)}
+function reg(){if(!('mediaSession' in navigator))return;var H={play:function(){if(au.paused){if(!au.src)go(i);else play()}},pause:function(){au.pause()},nexttrack:function(){seekTo(i+1)},previoustrack:function(){seekTo(i-1)},seekforward:null,seekbackward:null};Object.keys(H).forEach(function(k){try{navigator.mediaSession.setActionHandler(k,H[k])}catch(e){}})}
 reg();
 fetch('list.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(L){
   L.forEach(function(x){var o=document.createElement('option');o.value=x.json;o.textContent=x.title;$('sel').appendChild(o)});
