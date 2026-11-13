@@ -1,0 +1,50 @@
+# 英文を texts/ に置く（GitHub の画面から1ファイル追加するだけでもよい）
+#   → この処理が音声を作り、実験版に置く（区切りmp3・全体mp3・json・一覧）。
+# 英文が前回と同じなら作り直さない。費用：公開リポジトリの GitHub Actions は無料。
+name: 英文から音声を作る
+on:
+  push:
+    branches: [main]
+    paths: ['texts/**.txt', 'tools/**']
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: make-audio
+  cancel-in-progress: false
+jobs:
+  make:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 部品を入れる
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng > /dev/null
+          pip install -q kokoro-onnx==0.6.1 soundfile numpy
+      - name: 音声モデルを用意（公式配布・ハッシュ確認）
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: kokoro-v1.0-int8-af
+      - run: |
+          mkdir -p models
+          get() { [ -s "models/$1" ] || curl -sSL -o "models/$1" "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/$1"; echo "$2  models/$1" | sha256sum -c -; }
+          get kokoro-v1.0.int8.onnx 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb
+          get voices-v1.0.bin bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
+      - name: 音声を作る（変わった英文だけ）
+        run: |
+          for t in texts/*.txt; do
+            python3 tools/make_audio.py "$t" --skip-unchanged --model models/kokoro-v1.0.int8.onnx --voices models/voices-v1.0.bin
+          done
+      - name: 実験版に置く
+        run: |
+          git config user.name "listening-app-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- '*.mp3' '*.json'
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "音声を作成（英文から自動）"
+          git push
