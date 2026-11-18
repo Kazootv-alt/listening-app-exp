@@ -1,0 +1,64 @@
+# 自動テスト（直すたびに毎回）＋ Gemini による自動レビュー（鍵が登録されている時だけ・無料枠）
+# 結果：テストは Actions の画面、Gemini の意見は Issue「AIレビュー（Gemini）」に残る。費用：公開リポジトリなので無料。
+name: 自動テストとAIレビュー
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: [英文から音声を作る]
+    types: [completed]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 試験用ブラウザを入れる
+        run: |
+          npm i --no-save --no-audit --no-fund playwright@1.49.1 > /dev/null
+          npx playwright install --with-deps chromium > /dev/null
+      - name: 自動テスト
+        run: |
+          python3 tests/serve_range.py . 8900 &
+          sleep 1
+          set -o pipefail
+          python3 tests/test_reading.py 2>&1 | tee test-result.txt
+          node tests/ci_exp.mjs http://127.0.0.1:8900/ 2>&1 | tee -a test-result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-result
+          path: test-result.txt
+  gemini-review:
+    needs: test
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-result
+      - name: Gemini に見てもらう（鍵が無ければ何もしない）
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/gemini_review.py test-result.txt
