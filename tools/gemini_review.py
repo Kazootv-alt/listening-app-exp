@@ -11,19 +11,21 @@ if not key:
 
 def pick_model():
     """モデル名は時期で変わるので、指定が無ければ使える Flash の最新を自動で選ぶ（無料枠は Flash 系のみ）"""
-    if os.environ.get('GEMINI_MODEL'): return os.environ['GEMINI_MODEL']
+    if os.environ.get('GEMINI_MODEL'): return [os.environ['GEMINI_MODEL']]
     try:
         r = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', headers={'x-goog-api-key': key})
         names = [m['name'].split('/')[-1] for m in json.load(urllib.request.urlopen(r, timeout=30)).get('models', [])
                  if 'generateContent' in m.get('supportedGenerationMethods', [])]
-        ok = [n for n in names if re.fullmatch(r'gemini-(\d+(?:\.\d+)?)-flash', n)]
-        if ok: return max(ok, key=lambda n: float(re.search(r'\d+(?:\.\d+)?', n).group()))
+        ok = [n for n in names if re.fullmatch(r'gemini-(\d+(?:\.\d+)?)-flash(?:-lite)?', n)]
+        # 新しい順。同じ版なら通常版を先に、軽量版（lite）を後に
+        ok.sort(key=lambda n: (float(re.search(r'\d+(?:\.\d+)?', n).group()), 'lite' not in n), reverse=True)
+        if ok: return ok[:3]
     except Exception as e:
         print('モデル一覧を取れませんでした：', e)
-    return 'gemini-2.5-flash'
+    return ['gemini-2.5-flash']
 
 
-model = pick_model()
+models = pick_model()
 mode = os.environ.get('REVIEW_MODE', 'change')  # change＝直した中身のレビュー／audit＝定期のボトルネック監査
 
 
@@ -50,13 +52,20 @@ else:
             'を具体的に（ファイル名と該当箇所付きで）挙げてください。問題が無い観点は「なし」と書く。推測は推測と明記。')
     body = f'## 変更の説明\n{msg}\n\n## 差分\n{clip(diff, 60000)}\n\n## 自動テストの結果\n{clip(tests, 8000)}'
 req = {'contents': [{'role': 'user', 'parts': [{'text': task + '\n\n回答は日本語で、見出しと箇条書きで簡潔に。\n\n' + body}]}]}
-url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
-r = urllib.request.Request(url, data=json.dumps(req).encode(), headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
-try:
-    res = json.load(urllib.request.urlopen(r, timeout=120))
-    text = ''.join(p.get('text', '') for p in res['candidates'][0]['content']['parts'])
-except Exception as e:
-    text = f'Gemini を呼べませんでした（{type(e).__name__}: {str(e)[:300]}）'
+import time
+text, errs, model = None, [], models[0]
+for model in models:  # 混雑（503・429）や時間切れなら、少し待ってやり直し、だめなら次のモデルへ
+    for k in range(2):
+        try:
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
+            r = urllib.request.Request(url, data=json.dumps(req).encode(), headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
+            res = json.load(urllib.request.urlopen(r, timeout=150))
+            text = ''.join(p.get('text', '') for p in res['candidates'][0]['content']['parts']); break
+        except Exception as e:
+            errs.append(f'{model}: {type(e).__name__} {str(e)[:120]}'); time.sleep(20)
+    if text: break
+if not text:
+    text = 'Gemini を呼べませんでした（' + ' / '.join(errs) + '）'
 title = 'AIレビュー（Gemini）' if mode != 'audit' else 'AIボトルネック監査（Gemini・定期）'
 head = sh('git', 'log', '-1', '--format=%h %s').strip()
 num = sh('gh', 'issue', 'list', '--state', 'open', '--search', f'"{title}" in:title', '--json', 'number', '--jq', '.[0].number').strip()
