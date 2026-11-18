@@ -62,7 +62,10 @@ for model in models:  # 混雑（503・429）や時間切れなら、少し待�
             res = json.load(urllib.request.urlopen(r, timeout=150))
             text = ''.join(p.get('text', '') for p in res['candidates'][0]['content']['parts']); break
         except Exception as e:
-            errs.append(f'{model}: {type(e).__name__} {str(e)[:120]}'); time.sleep(20)
+            errs.append(f'{model}: {type(e).__name__} {str(e)[:120]}')
+            code = getattr(e, 'code', None)
+            if code and 400 <= code < 500 and code != 429: break  # 鍵・要求の誤りは、やり直しても直らない（Gemini の指摘で修正）
+            time.sleep(20)
     if text: break
 if not text:
     text = 'Gemini を呼べませんでした（' + ' / '.join(errs) + '）'
