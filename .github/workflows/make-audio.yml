@@ -5,7 +5,7 @@ name: 英文から音声を作る
 on:
   push:
     branches: [main]
-    paths: ['texts/**.txt', 'tools/**']
+    paths: ['texts/**.txt', 'tools/make_audio.py', 'tools/reading.py']
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -21,9 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: 部品を入れる
+      - name: 部品を入れる（止まったら1回やり直す）
+        timeout-minutes: 12
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng > /dev/null
+          inst() { timeout 300 sudo apt-get update -qq && timeout 300 sudo apt-get install -y -qq ffmpeg espeak-ng > /dev/null; }
+          inst || { echo 'やり直し'; sleep 10; inst; }
           pip install -q kokoro-onnx==0.6.1 soundfile numpy
       - name: 音声モデルを用意（公式配布・ハッシュ確認）
         uses: actions/cache@v4
