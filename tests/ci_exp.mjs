@@ -22,7 +22,10 @@ for (const f of fs.readdirSync('texts').filter(f => f.endsWith('.txt'))) {
 // 2 画面の動き（iPhone相当の画面幅）
 const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' })).newPage();
+p.setDefaultTimeout(20000);
 const errs = []; p.on('pageerror', e => errs.push(e.message));
+const step = n => console.log('… ' + n);
+setTimeout(async () => { console.log('時間切れ（3分）。最後の画面を test-shot.png に保存'); try { await p.screenshot({ path: 'test-shot.png' }); } catch (e) { } process.exit(2); }, 180000).unref();
 await p.goto(BASE); await p.waitForFunction(() => document.getElementById('txt').textContent.length > 0, null, { timeout: 15000 });
 const st = () => p.evaluate(() => { const a = document.getElementById('au'); return { sel: document.getElementById('sel').value, no: document.getElementById('no').textContent, t: +a.currentTime.toFixed(2), paused: a.paused, src: a.src.split('/').pop() }; });
 const first = list[0];

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +41,9 @@ jobs:
         if: always()
         with:
           name: test-result
-          path: test-result.txt
+          path: |
+            test-result.txt
+            test-shot.png
   gemini-review:
     needs: test
     if: always() && github.event_name != 'pull_request'
